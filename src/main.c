@@ -52,6 +52,7 @@ static int prev_pump_on = -1;
 static int pump_on = 0;
 static int64_t pump_started_at_us = 0;
 static int64_t pump_last_cycle_end_us = 0;
+static pet_state_t g_pet_state = PET_HAPPY;
 
 // ADC
 
@@ -119,6 +120,19 @@ static int dht11_read(int *temperature, int *humidity)
     return 0;
 }
 
+static void tft_pet_task(void *arg)
+{
+    (void)arg;
+
+    int frame = 0;
+
+    while (1) {
+        tft_draw_pet(g_pet_state, frame);
+        frame = !frame;
+        vTaskDelay(pdMS_TO_TICKS(400));
+    }
+}
+
 // MAIN
 
 void app_main(void)
@@ -157,7 +171,8 @@ void app_main(void)
     gpio_config(&float_conf);
 
     tft_init_display();
-    tft_draw_frame();
+    // tft_draw_frame();
+    xTaskCreate(tft_pet_task, "tft_pet_task", 4096, NULL, 4, NULL);
 
     // ADC
     adc_oneshot_unit_init_cfg_t init_config1 = {
@@ -276,72 +291,16 @@ void app_main(void)
         g_state.pump_on = pump_on;
 
         // TFT update
-        bool too_hot = (g_state.temp >= g_thresholds.temp_threshold);
-
-        bool tft_needs_update = false;
-
-        if (prev_dht_show_error != (int)dht_show_error) tft_needs_update = true;
-        if (prev_low_tank != (int)low_tank) tft_needs_update = true;
-        if (prev_too_hot != (int)too_hot) tft_needs_update = true;
-        if (prev_needs_water != (int)needs_water) tft_needs_update = true;
-        if (prev_low_light != (int)low_light) tft_needs_update = true;
-        if (prev_lamp_on != lamp_on) tft_needs_update = true;
-        if (prev_pump_on != pump_on) tft_needs_update = true;
-
-        if (tft_needs_update) {
-            if (dht_show_error) {
-                tft_draw_value_line(20, "ERR", COLOR_RED);
-                tft_draw_value_line(35, "ERR", COLOR_RED);
-            } else {
-                snprintf(buf, sizeof(buf), "%.2f C", (float)g_state.temp);
-                tft_draw_value_line(20, buf,
-                                    (g_state.temp >= g_thresholds.temp_threshold) ? COLOR_RED : COLOR_GREEN);
-
-                snprintf(buf, sizeof(buf), "%d %%", g_state.hum);
-                tft_draw_value_line(35, buf, COLOR_GREEN);
-            }
-
-            snprintf(buf, sizeof(buf), "%d %s",
-                    g_state.soil_raw,
-                    (g_state.soil_raw > g_thresholds.soil_threshold) ? "DRY" : "OK");
-            tft_draw_value_line(50, buf,
-                                (g_state.soil_raw > g_thresholds.soil_threshold) ? COLOR_RED : COLOR_GREEN);
-
-            snprintf(buf, sizeof(buf), "%d", g_state.ldr_raw);
-            tft_draw_value_line(65, buf, COLOR_WHITE);
-
-            tft_draw_value_line(80, low_tank ? "LOW" : "OK",
-                                low_tank ? COLOR_RED : COLOR_GREEN);
-
-            tft_draw_value_line(95, lamp_on ? "ON" : "OFF",
-                                lamp_on ? COLOR_YELLOW : COLOR_GRAY);
-
-            tft_draw_value_line(110, pump_on ? "ON" : "OFF",
-                                pump_on ? COLOR_CYAN : COLOR_GRAY);
-
-            if (dht_show_error) {
-                tft_draw_value_line(135, "DHT ERROR", COLOR_RED);
-            } else if (low_tank) {
-                tft_draw_value_line(135, "LOW TANK", COLOR_RED);
-            } else if (too_hot) {
-                tft_draw_value_line(135, "TOO HOT", COLOR_RED);
-            } else if (needs_water) {
-                tft_draw_value_line(135, "NEEDS WATER", COLOR_RED);
-            } else if (low_light) {
-                tft_draw_value_line(135, "LOW LIGHT", COLOR_YELLOW);
-            } else if (pump_on) {
-                tft_draw_value_line(135, "PUMPING", COLOR_CYAN);
-            } else {
-                tft_draw_value_line(135, "HAPPY", COLOR_GREEN);
-            }
-
-            prev_dht_show_error = (int)dht_show_error;
-            prev_low_tank = (int)low_tank;
-            prev_too_hot = (int)too_hot;
-            prev_needs_water = (int)needs_water;
-            prev_low_light = (int)low_light;
-            prev_lamp_on = lamp_on;
-            prev_pump_on = pump_on;
+        if (dht_show_error) {
+            g_pet_state = PET_ERROR;
+        } else if (!tank_ok || soil_needs_water) {
+            g_pet_state = PET_THIRSTY;
+        } else if (temp >= g_thresholds.temp_threshold) {
+            g_pet_state = PET_HOT;
+        } else if (lamp_on) {
+            g_pet_state = PET_DARK;
+        } else {
+            g_pet_state = PET_HAPPY;
         }
 
         vTaskDelay(pdMS_TO_TICKS(2000));

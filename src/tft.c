@@ -169,6 +169,29 @@ static void tft_draw_pixel(uint8_t x, uint8_t y, uint16_t color)
     spi_device_transmit(tft_spi, &t);
 }
 
+static void tft_fill_rect(int x, int y, int w, int h, uint16_t color)
+{
+    for (int yy = y; yy < y + h; yy++) {
+        for (int xx = x; xx < x + w; xx++) {
+            tft_draw_pixel(xx, yy, color);
+        }
+    }
+}
+
+static void tft_draw_hline(int x, int y, int w, uint16_t color)
+{
+    for (int i = 0; i < w; i++) {
+        tft_draw_pixel(x + i, y, color);
+    }
+}
+
+static void tft_draw_vline(int x, int y, int h, uint16_t color)
+{
+    for (int i = 0; i < h; i++) {
+        tft_draw_pixel(x, y + i, color);
+    }
+}
+
 static void tft_draw_char(uint8_t x, uint8_t y, char c, uint16_t color, uint16_t bg)
 {
     if (c < 32 || c > 127) c = '?';
@@ -200,23 +223,127 @@ void tft_draw_text(uint8_t x, uint8_t y, const char *text, uint16_t color, uint1
     }
 }
 
-void tft_draw_frame(void)
+static void draw_pet_base(void)
 {
     tft_fill_screen(COLOR_BLACK);
 
-    tft_draw_text(5, 5,  "PLANTPET", COLOR_YELLOW, COLOR_BLACK);
-    tft_draw_text(5, 20, "TEMP:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 35, "HUM:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 50, "SOIL:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 65, "LIGHT:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 80, "TANK:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 95, "LAMP:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 110, "PUMP:", COLOR_WHITE, COLOR_BLACK);
-    tft_draw_text(5, 135, "STATE:", COLOR_CYAN, COLOR_BLACK);
+    // urechi
+    tft_fill_rect(34, 18, 14, 14, COLOR_WHITE);
+    tft_fill_rect(80, 18, 14, 14, COLOR_WHITE);
+
+    // cap
+    tft_fill_rect(24, 28, 80, 70, COLOR_WHITE);
+
+    // nas
+    tft_fill_rect(61, 58, 6, 4, COLOR_RED);
 }
 
-void tft_draw_value_line(uint8_t y, const char *value, uint16_t color)
+static void draw_happy_face(int frame)
 {
-    tft_draw_text(55, y, "            ", COLOR_BLACK, COLOR_BLACK);
-    tft_draw_text(55, y, value, color, COLOR_BLACK);
+    if (frame == 0) {
+        tft_fill_rect(42, 46, 8, 10, COLOR_BLACK);
+        tft_fill_rect(78, 46, 8, 10, COLOR_BLACK);
+    } else {
+        tft_fill_rect(40, 50, 12, 2, COLOR_BLACK);
+        tft_fill_rect(76, 50, 12, 2, COLOR_BLACK);
+    }
+
+    tft_draw_hline(53, 74, 22, COLOR_BLACK);
+    tft_draw_vline(53, 68, 6, COLOR_BLACK);
+    tft_draw_vline(74, 68, 6, COLOR_BLACK);
+
+    tft_draw_text(42, 118, "HAPPY", COLOR_GREEN, COLOR_BLACK);
+}
+
+static void draw_thirsty_face(int frame)
+{
+    tft_fill_rect(42, 50, 10, 2, COLOR_BLACK);
+    tft_fill_rect(76, 50, 10, 2, COLOR_BLACK);
+
+    tft_draw_hline(55, 78, 18, COLOR_BLACK);
+    tft_draw_vline(55, 78, 4, COLOR_BLACK);
+    tft_draw_vline(72, 78, 4, COLOR_BLACK);
+
+    if (frame == 1) {
+        tft_fill_rect(88, 58, 3, 6, COLOR_BLUE);
+        tft_fill_rect(87, 64, 5, 3, COLOR_BLUE);
+    }
+
+    tft_draw_text(34, 118, "THIRSTY", COLOR_CYAN, COLOR_BLACK);
+}
+
+static void draw_hot_face(int frame)
+{
+    tft_fill_rect(42, 48, 10, 2, COLOR_BLACK);
+    tft_fill_rect(76, 48, 10, 2, COLOR_BLACK);
+
+    tft_draw_hline(56, 76, 16, COLOR_BLACK);
+
+    if (frame == 1) {
+        tft_fill_rect(90, 40, 3, 7, COLOR_CYAN);
+        tft_fill_rect(89, 47, 5, 2, COLOR_CYAN);
+    }
+
+    tft_draw_text(34, 118, "TOO HOT", COLOR_RED, COLOR_BLACK);
+}
+
+static void draw_dark_face(int frame)
+{
+    tft_fill_rect(40, 51, 12, 2, COLOR_BLACK);
+    tft_fill_rect(76, 51, 12, 2, COLOR_BLACK);
+
+    tft_fill_rect(60, 76, 8, 2, COLOR_BLACK);
+
+    if (frame == 1) {
+        tft_draw_text(92, 36, "Z", COLOR_YELLOW, COLOR_BLACK);
+    }
+
+    tft_draw_text(22, 118, "LOW LIGHT", COLOR_YELLOW, COLOR_BLACK);
+}
+
+static void draw_error_face(int frame)
+{
+    (void)frame;
+
+    tft_draw_pixel(42, 46, COLOR_BLACK);
+    tft_draw_pixel(43, 47, COLOR_BLACK);
+    tft_draw_pixel(44, 48, COLOR_BLACK);
+    tft_draw_pixel(44, 46, COLOR_BLACK);
+    tft_draw_pixel(43, 47, COLOR_BLACK);
+    tft_draw_pixel(42, 48, COLOR_BLACK);
+
+    tft_draw_pixel(78, 46, COLOR_BLACK);
+    tft_draw_pixel(79, 47, COLOR_BLACK);
+    tft_draw_pixel(80, 48, COLOR_BLACK);
+    tft_draw_pixel(80, 46, COLOR_BLACK);
+    tft_draw_pixel(79, 47, COLOR_BLACK);
+    tft_draw_pixel(78, 48, COLOR_BLACK);
+
+    tft_draw_hline(56, 76, 16, COLOR_BLACK);
+
+    tft_draw_text(38, 118, "ERROR", COLOR_RED, COLOR_BLACK);
+}
+
+void tft_draw_pet(pet_state_t state, int frame)
+{
+    draw_pet_base();
+
+    switch (state) {
+        case PET_HAPPY:
+            draw_happy_face(frame);
+            break;
+        case PET_THIRSTY:
+            draw_thirsty_face(frame);
+            break;
+        case PET_HOT:
+            draw_hot_face(frame);
+            break;
+        case PET_DARK:
+            draw_dark_face(frame);
+            break;
+        case PET_ERROR:
+        default:
+            draw_error_face(frame);
+            break;
+    }
 }
