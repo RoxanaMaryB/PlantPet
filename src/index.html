@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PlantPet</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 720px;
+      margin: 20px auto;
+      padding: 12px;
+      background: #f6f7fb;
+      color: #222;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+    }
+
+    .card {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      margin-top: 4px;
+      border: 1px solid #bbb;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+
+    button {
+      margin-top: 14px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: #2e7d32;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #256428;
+    }
+
+    .row {
+      margin: 6px 0;
+    }
+
+    .label {
+      font-weight: 600;
+    }
+
+    #msg {
+      margin-top: 10px;
+      color: #2e7d32;
+    }
+  </style>
+</head>
+<body>
+  <h1>PlantPet</h1>
+  <p>Monitorizare locala prin ESP32 Access Point</p>
+
+  <div class="card">
+    <h2>Status</h2>
+    <div class="row"><span class="label">Temperature:</span> <span id="temp">-</span></div>
+    <div class="row"><span class="label">Humidity:</span> <span id="hum">-</span></div>
+    <div class="row"><span class="label">Soil raw:</span> <span id="soil">-</span></div>
+    <div class="row"><span class="label">Light raw:</span> <span id="light">-</span></div>
+    <div class="row"><span class="label">Tank:</span> <span id="tank">-</span></div>
+    <div class="row"><span class="label">Lamp:</span> <span id="lamp">-</span></div>
+    <div class="row"><span class="label">Pump:</span> <span id="pump">-</span></div>
+  </div>
+
+  <div class="card">
+    <h2>Thresholds</h2>
+
+    <label for="ldr">Light threshold</label>
+    <input id="ldr" type="number">
+
+    <label for="soil_th">Soil threshold</label>
+    <input id="soil_th" type="number">
+
+    <label for="temp_th">Temperature threshold</label>
+    <input id="temp_th" type="number">
+
+    <button onclick="saveCfg()">Save</button>
+    <div id="msg"></div>
+  </div>
+
+  <script>
+  function setValueIfNotEditing(id, value) {
+    const el = document.getElementById(id);
+    if (document.activeElement !== el) {
+      el.value = value;
+    }
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/status');
+      const s = await r.json();
+
+      document.getElementById('temp').textContent = s.temp;
+      document.getElementById('hum').textContent = s.hum;
+      document.getElementById('soil').textContent = s.soil_raw;
+      document.getElementById('light').textContent = s.ldr_raw;
+      document.getElementById('tank').textContent = (s.float_state == 0) ? 'LOW' : 'OK';
+      document.getElementById('lamp').textContent = s.lamp_on ? 'ON' : 'OFF';
+      document.getElementById('pump').textContent = s.pump_on ? 'ON' : 'OFF';
+
+      setValueIfNotEditing('ldr', s.ldr_threshold);
+      setValueIfNotEditing('soil_th', s.soil_threshold);
+      setValueIfNotEditing('temp_th', s.temp_threshold);
+    } catch (e) {
+      document.getElementById('msg').textContent = 'Error reading status';
+    }
+  }
+
+  async function saveCfg() {
+    const ldr = document.getElementById('ldr').value;
+    const soil = document.getElementById('soil_th').value;
+    const temp = document.getElementById('temp_th').value;
+
+    try {
+      const r = await fetch(`/set?ldr=${ldr}&soil=${soil}&temp=${temp}`);
+      const txt = await r.text();
+      document.getElementById('msg').textContent = txt;
+      refresh();
+    } catch (e) {
+      document.getElementById('msg').textContent = 'Error saving thresholds';
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
