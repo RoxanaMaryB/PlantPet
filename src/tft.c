@@ -18,7 +18,13 @@
 #define TFT_WIDTH   128
 #define TFT_HEIGHT  160
 
+#define TFT_X_OFFSET  2
+#define TFT_Y_OFFSET  1
+
 static spi_device_handle_t tft_spi;
+
+static pet_state_t current_pet_state = PET_HAPPY;
+static int anim_frame = 0;
 
 static void tft_send_cmd(uint8_t cmd)
 {
@@ -55,6 +61,11 @@ static void tft_reset(void)
 static void tft_set_addr_window(uint8_t x0, uint8_t y0, uint8_t x1, uint8_t y1)
 {
     uint8_t data[4];
+
+    x0 += TFT_X_OFFSET;
+    x1 += TFT_X_OFFSET;
+    y0 += TFT_Y_OFFSET;
+    y1 += TFT_Y_OFFSET;
 
     tft_send_cmd(0x2A);
     data[0] = 0x00; data[1] = x0;
@@ -223,7 +234,21 @@ void tft_draw_text(uint8_t x, uint8_t y, const char *text, uint16_t color, uint1
     }
 }
 
-static void draw_pet_base(void)
+static void redraw_head(uint16_t head_color, uint16_t nose_color)
+{
+    // redeseneaza complet capul
+    tft_fill_rect(24, 28, 80, 70, head_color);
+
+    // nas
+    tft_fill_rect(61, 58, 6, 4, nose_color);
+}
+
+static void clear_status_text(void)
+{
+    tft_fill_rect(18, 116, 100, 12, COLOR_BLACK);
+}
+
+void tft_draw_pet_base(void)
 {
     tft_fill_screen(COLOR_BLACK);
 
@@ -236,17 +261,14 @@ static void draw_pet_base(void)
 
     // nas
     tft_fill_rect(61, 58, 6, 4, COLOR_RED);
+
+    clear_status_text();
 }
 
-static void draw_happy_face(int frame)
+static void draw_happy_static(void)
 {
-    if (frame == 0) {
-        tft_fill_rect(42, 46, 8, 10, COLOR_BLACK);
-        tft_fill_rect(78, 46, 8, 10, COLOR_BLACK);
-    } else {
-        tft_fill_rect(40, 50, 12, 2, COLOR_BLACK);
-        tft_fill_rect(76, 50, 12, 2, COLOR_BLACK);
-    }
+    tft_fill_rect(42, 46, 8, 10, COLOR_BLACK);
+    tft_fill_rect(78, 46, 8, 10, COLOR_BLACK);
 
     tft_draw_hline(53, 74, 22, COLOR_BLACK);
     tft_draw_vline(53, 68, 6, COLOR_BLACK);
@@ -255,7 +277,7 @@ static void draw_happy_face(int frame)
     tft_draw_text(42, 118, "HAPPY", COLOR_GREEN, COLOR_BLACK);
 }
 
-static void draw_thirsty_face(int frame)
+static void draw_thirsty_static(void)
 {
     tft_fill_rect(42, 50, 10, 2, COLOR_BLACK);
     tft_fill_rect(76, 50, 10, 2, COLOR_BLACK);
@@ -264,47 +286,45 @@ static void draw_thirsty_face(int frame)
     tft_draw_vline(55, 78, 4, COLOR_BLACK);
     tft_draw_vline(72, 78, 4, COLOR_BLACK);
 
-    if (frame == 1) {
-        tft_fill_rect(88, 58, 3, 6, COLOR_BLUE);
-        tft_fill_rect(87, 64, 5, 3, COLOR_BLUE);
-    }
-
     tft_draw_text(34, 118, "THIRSTY", COLOR_CYAN, COLOR_BLACK);
 }
 
-static void draw_hot_face(int frame)
+static void draw_low_tank_static(void)
+{
+    // expresie ca la THIRSTY
+    tft_fill_rect(42, 50, 10, 2, COLOR_BLACK);
+    tft_fill_rect(76, 50, 10, 2, COLOR_BLACK);
+
+    tft_draw_hline(55, 78, 18, COLOR_BLACK);
+    tft_draw_vline(55, 78, 4, COLOR_BLACK);
+    tft_draw_vline(72, 78, 4, COLOR_BLACK);
+
+    tft_draw_text(28, 118, "LOW TANK", COLOR_RED, COLOR_BLACK);
+}
+
+static void draw_hot_static(void)
 {
     tft_fill_rect(42, 48, 10, 2, COLOR_BLACK);
     tft_fill_rect(76, 48, 10, 2, COLOR_BLACK);
 
     tft_draw_hline(56, 76, 16, COLOR_BLACK);
 
-    if (frame == 1) {
-        tft_fill_rect(90, 40, 3, 7, COLOR_CYAN);
-        tft_fill_rect(89, 47, 5, 2, COLOR_CYAN);
-    }
-
     tft_draw_text(34, 118, "TOO HOT", COLOR_RED, COLOR_BLACK);
 }
 
-static void draw_dark_face(int frame)
+static void draw_dark_static(void)
 {
     tft_fill_rect(40, 51, 12, 2, COLOR_BLACK);
     tft_fill_rect(76, 51, 12, 2, COLOR_BLACK);
 
     tft_fill_rect(60, 76, 8, 2, COLOR_BLACK);
 
-    if (frame == 1) {
-        tft_draw_text(92, 36, "Z", COLOR_YELLOW, COLOR_BLACK);
-    }
-
     tft_draw_text(22, 118, "LOW LIGHT", COLOR_YELLOW, COLOR_BLACK);
 }
 
-static void draw_error_face(int frame)
+static void draw_error_static(void)
 {
-    (void)frame;
-
+    // ochi X stanga
     tft_draw_pixel(42, 46, COLOR_BLACK);
     tft_draw_pixel(43, 47, COLOR_BLACK);
     tft_draw_pixel(44, 48, COLOR_BLACK);
@@ -312,6 +332,7 @@ static void draw_error_face(int frame)
     tft_draw_pixel(43, 47, COLOR_BLACK);
     tft_draw_pixel(42, 48, COLOR_BLACK);
 
+    // ochi X dreapta
     tft_draw_pixel(78, 46, COLOR_BLACK);
     tft_draw_pixel(79, 47, COLOR_BLACK);
     tft_draw_pixel(80, 48, COLOR_BLACK);
@@ -324,26 +345,95 @@ static void draw_error_face(int frame)
     tft_draw_text(38, 118, "ERROR", COLOR_RED, COLOR_BLACK);
 }
 
-void tft_draw_pet(pet_state_t state, int frame)
+void tft_set_pet_state(pet_state_t state)
 {
-    draw_pet_base();
+    current_pet_state = state;
+    anim_frame = 0;
+
+    if (state == PET_LOW_TANK) {
+        redraw_head(COLOR_RED, COLOR_BLACK);
+    } else {
+        redraw_head(COLOR_WHITE, COLOR_RED);
+    }
+    clear_status_text();
 
     switch (state) {
         case PET_HAPPY:
-            draw_happy_face(frame);
+            draw_happy_static();
             break;
         case PET_THIRSTY:
-            draw_thirsty_face(frame);
+            draw_thirsty_static();
+            break;
+        case PET_LOW_TANK:
+            draw_low_tank_static();
             break;
         case PET_HOT:
-            draw_hot_face(frame);
+            draw_hot_static();
             break;
         case PET_DARK:
-            draw_dark_face(frame);
+            draw_dark_static();
             break;
         case PET_ERROR:
         default:
-            draw_error_face(frame);
+            draw_error_static();
+            break;
+    }
+}
+
+void tft_pet_animate(void)
+{
+    anim_frame = !anim_frame;
+
+    switch (current_pet_state) {
+        case PET_HAPPY:
+            // clipit: redesenam doar ochii
+            tft_fill_rect(40, 44, 14, 14, COLOR_WHITE);
+            tft_fill_rect(76, 44, 14, 14, COLOR_WHITE);
+
+            if (anim_frame == 0) {
+                tft_fill_rect(42, 46, 8, 10, COLOR_BLACK);
+                tft_fill_rect(78, 46, 8, 10, COLOR_BLACK);
+            } else {
+                tft_fill_rect(40, 50, 12, 2, COLOR_BLACK);
+                tft_fill_rect(76, 50, 12, 2, COLOR_BLACK);
+            }
+            break;
+
+        case PET_THIRSTY:
+            tft_fill_rect(87, 58, 6, 10, COLOR_WHITE);
+            if (anim_frame) {
+                tft_fill_rect(88, 58, 3, 6, COLOR_BLUE);
+                tft_fill_rect(87, 64, 5, 3, COLOR_BLUE);
+            }
+            break;
+
+        case PET_LOW_TANK:
+            tft_fill_rect(87, 58, 6, 10, COLOR_RED);
+            if (anim_frame) {
+                tft_fill_rect(88, 58, 3, 6, COLOR_BLUE);
+                tft_fill_rect(87, 64, 5, 3, COLOR_BLUE);
+            }
+            break;
+        case PET_HOT:
+            // picatura transpiratie apare/dispare
+            tft_fill_rect(89, 40, 6, 10, COLOR_WHITE);
+            if (anim_frame) {
+                tft_fill_rect(90, 40, 3, 7, COLOR_CYAN);
+                tft_fill_rect(89, 47, 5, 2, COLOR_CYAN);
+            }
+            break;
+
+        case PET_DARK:
+            // Z apare/dispare
+            tft_fill_rect(92, 36, 8, 8, COLOR_WHITE);
+            if (anim_frame) {
+                tft_draw_text(92, 36, "Z", COLOR_BLUE, COLOR_WHITE);
+            }
+            break;
+
+        case PET_ERROR:
+        default:
+            // fara animatie
             break;
     }
 }

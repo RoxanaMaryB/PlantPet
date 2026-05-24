@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "main.c" "webserver.c" "tft.c"
+    SRCS "main.c" "webserver.c" "tft.c" "conversions.c"
     INCLUDE_DIRS "../include"
 )
 

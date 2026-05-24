@@ -13,6 +13,7 @@
 #include "webserver.h"
 #include "esp_timer.h"
 #include "tft.h"
+#include "conversions.h"
 
 
 // PINI
@@ -32,8 +33,8 @@
 #define LDR_PIN         ADC_CHANNEL_7   // GPIO35
 
 thresholds_t g_thresholds = {
-    .ldr_threshold = 2000,
-    .soil_threshold = 2000,
+    .ldr_threshold = 20,
+    .soil_threshold = 25,
     .temp_threshold = 26,
 };
 
@@ -41,18 +42,24 @@ sensor_state_t g_state = {0};
 
 static int64_t g_last_valid_dht_us = 0;
 
-static int prev_dht_show_error = -1;
-static int prev_low_tank = -1;
-static int prev_too_hot = -1;
-static int prev_needs_water = -1;
-static int prev_low_light = -1;
-static int prev_lamp_on = -1;
-static int prev_pump_on = -1;
+// static int prev_dht_show_error = -1;
+// static int prev_low_tank = -1;
+// static int prev_too_hot = -1;
+// static int prev_needs_water = -1;
+// static int prev_low_light = -1;
+// static int prev_lamp_on = -1;
+// static int prev_pump_on = -1;
 
 static int pump_on = 0;
 static int64_t pump_started_at_us = 0;
 static int64_t pump_last_cycle_end_us = 0;
-static pet_state_t g_pet_state = PET_HAPPY;
+static volatile pet_state_t g_pet_state = PET_HAPPY;
+
+static int low_light_latched = 0;
+static int soil_needs_water_latched = 0;
+
+#define LIGHT_HYSTERESIS_PERCENT 5
+#define SOIL_HYSTERESIS_PERCENT  5
 
 // ADC
 
@@ -124,11 +131,17 @@ static void tft_pet_task(void *arg)
 {
     (void)arg;
 
-    int frame = 0;
+    pet_state_t last_state = -1;
 
     while (1) {
-        tft_draw_pet(g_pet_state, frame);
-        frame = !frame;
+        if (g_pet_state != last_state) {
+            printf("TFT state change: %d -> %d\n", (int)last_state, (int)g_pet_state);
+            tft_set_pet_state(g_pet_state);
+            last_state = g_pet_state;
+        } else {
+            tft_pet_animate();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(400));
     }
 }
@@ -172,6 +185,8 @@ void app_main(void)
 
     tft_init_display();
     // tft_draw_frame();
+    tft_draw_pet_base();
+    tft_set_pet_state(PET_HAPPY);
     xTaskCreate(tft_pet_task, "tft_pet_task", 4096, NULL, 4, NULL);
 
     // ADC
@@ -200,6 +215,9 @@ void app_main(void)
         adc_oneshot_read(adc1_handle, SOIL_PIN, &soil_raw);
         adc_oneshot_read(adc1_handle, LDR_PIN, &ldr_raw);
 
+        int soil_percent = soil_raw_to_percent(soil_raw);
+        int light_percent = ldr_raw_to_percent(ldr_raw);
+
         float_state = gpio_get_level(FLOAT_GPIO);
 
         int dht_status = dht11_read(&temp, &hum);
@@ -216,19 +234,29 @@ void app_main(void)
         }
 
         bool low_tank = (float_state == 0);
-        bool needs_water = (soil_raw > g_thresholds.soil_threshold);
+
+        // soil latch cu hysteresis pe procente
+        if (!soil_needs_water_latched && soil_percent < g_thresholds.soil_threshold) {
+            soil_needs_water_latched = 1;
+        } else if (soil_needs_water_latched &&
+                soil_percent > (g_thresholds.soil_threshold + SOIL_HYSTERESIS_PERCENT)) {
+            soil_needs_water_latched = 0;
+        }
+
+        bool needs_water = soil_needs_water_latched;
 
         // control bec
         static int lamp_on = 0;
-        int ldr_on_threshold = g_thresholds.ldr_threshold + 100;
-        int ldr_off_threshold = g_thresholds.ldr_threshold - 100;
 
-        if (!lamp_on && ldr_raw > ldr_on_threshold) {
-            lamp_on = 1;
-        } else if (lamp_on && ldr_raw < ldr_off_threshold) {
-            lamp_on = 0;
+        // low light latch cu hysteresis pe procente
+        if (!low_light_latched && light_percent < g_thresholds.ldr_threshold) {
+            low_light_latched = 1;
+        } else if (low_light_latched &&
+                light_percent > (g_thresholds.ldr_threshold + LIGHT_HYSTERESIS_PERCENT)) {
+            low_light_latched = 0;
         }
 
+        lamp_on = low_light_latched;
         gpio_set_level(LIGHT_CTRL_GPIO, lamp_on);
 
         bool low_light = (lamp_on != 0);
@@ -237,7 +265,7 @@ void app_main(void)
         int64_t now_us_pompa = esp_timer_get_time();
 
         bool tank_ok = (float_state != 0);
-        bool soil_needs_water = (soil_raw > g_thresholds.soil_threshold);
+        bool soil_needs_water = soil_needs_water_latched;
 
         if (pump_on) {
             // daca pompa merge deja, o oprim dupa durata setata
@@ -273,8 +301,14 @@ void app_main(void)
             printf("DHT11 eroare: %d\n", dht_status);
         }
 
-        printf("Soil raw   : %d | %s\n", soil_raw, (soil_raw > g_thresholds.soil_threshold) ? "DRY / NEEDS WATER" : "OK / HAS WATER");
-        printf("LDR raw    : %d\n", ldr_raw);
+        printf("Soil raw   : %d | %d%% | %s\n",
+            soil_raw,
+            soil_percent,
+            soil_percent_to_label(soil_percent));
+        printf("LDR raw    : %d | %d%% light | %s\n",
+            ldr_raw,
+            light_percent,
+            light_percent_to_label(light_percent));
         printf("Tank       : %s\n", float_state == 0 ? "LOW / trigger" : "OK");
         printf("Lamp       : %s\n", lamp_on ? "ON" : "OFF");
         printf("Pump       : %s\n", pump_on ? "ON" : "OFF");
@@ -293,7 +327,9 @@ void app_main(void)
         // TFT update
         if (dht_show_error) {
             g_pet_state = PET_ERROR;
-        } else if (!tank_ok || soil_needs_water) {
+        } else if (!tank_ok) {
+            g_pet_state = PET_LOW_TANK;
+        } else if (soil_needs_water) {
             g_pet_state = PET_THIRSTY;
         } else if (temp >= g_thresholds.temp_threshold) {
             g_pet_state = PET_HOT;
@@ -302,6 +338,14 @@ void app_main(void)
         } else {
             g_pet_state = PET_HAPPY;
         }
+
+        printf("PET state = %d | tank_ok=%d soil_needs_water=%d temp=%d lamp_on=%d dht_err=%d\n",
+            (int)g_pet_state,
+            tank_ok,
+            soil_needs_water,
+            temp,
+            lamp_on,
+            dht_show_error);
 
         vTaskDelay(pdMS_TO_TICKS(2000));
     }

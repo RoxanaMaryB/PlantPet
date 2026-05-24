@@ -9,6 +9,7 @@
 #include "esp_wifi.h"
 
 #include "webserver.h"
+#include "conversions.h"
 
 extern const uint8_t index_html_start[] asm("_binary_index_html_start");
 extern const uint8_t index_html_end[]   asm("_binary_index_html_end");
@@ -24,12 +25,22 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 {
     char resp[256];
 
+    int soil_percent = soil_raw_to_percent(g_state.soil_raw);
+    int light_percent = ldr_raw_to_percent(g_state.ldr_raw);
+
+    const char *soil_label = soil_percent_to_label(soil_percent);
+    const char *light_label = light_percent_to_label(light_percent);
+
     snprintf(resp, sizeof(resp),
         "{"
         "\"temp\":\"%.2f C\","
         "\"hum\":\"%d %%\","
         "\"soil_raw\":%d,"
+        "\"soil_percent\":%d,"
+        "\"soil_label\":\"%s\","
         "\"ldr_raw\":%d,"
+        "\"light_percent\":%d,"
+        "\"light_label\":\"%s\","
         "\"float_state\":%d,"
         "\"lamp_on\":%d,"
         "\"ldr_threshold\":%d,"
@@ -40,7 +51,11 @@ static esp_err_t status_get_handler(httpd_req_t *req)
         (float)g_state.temp,
         g_state.hum,
         g_state.soil_raw,
+        soil_percent,
+        soil_label,
         g_state.ldr_raw,
+        light_percent,
+        light_label,
         g_state.float_state,
         g_state.lamp_on,
         g_thresholds.ldr_threshold,

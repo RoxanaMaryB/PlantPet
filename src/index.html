@@ -80,8 +80,8 @@
     <h2>Status</h2>
     <div class="row"><span class="label">Temperature:</span> <span id="temp">-</span></div>
     <div class="row"><span class="label">Humidity:</span> <span id="hum">-</span></div>
-    <div class="row"><span class="label">Soil raw:</span> <span id="soil">-</span></div>
-    <div class="row"><span class="label">Light raw:</span> <span id="light">-</span></div>
+    <div class="row"><span class="label">Soil moisture:</span> <span id="soil">-</span></div>
+    <div class="row"><span class="label">Light level:</span> <span id="light">-</span></div>
     <div class="row"><span class="label">Tank:</span> <span id="tank">-</span></div>
     <div class="row"><span class="label">Lamp:</span> <span id="lamp">-</span></div>
     <div class="row"><span class="label">Pump:</span> <span id="pump">-</span></div>
@@ -90,11 +90,11 @@
   <div class="card">
     <h2>Thresholds</h2>
 
-    <label for="ldr">Light threshold</label>
-    <input id="ldr" type="number">
+    <label for="ldr">Minimum light (%)</label>
+    <input id="ldr" type="number" min="0" max="100">
 
-    <label for="soil_th">Soil threshold</label>
-    <input id="soil_th" type="number">
+    <label for="soil_th">Minimum soil moisture (%)</label>
+    <input id="soil_th" type="number" min="0" max="100">
 
     <label for="temp_th">Temperature threshold</label>
     <input id="temp_th" type="number">
@@ -118,8 +118,10 @@
 
       document.getElementById('temp').textContent = s.temp;
       document.getElementById('hum').textContent = s.hum;
-      document.getElementById('soil').textContent = s.soil_raw;
-      document.getElementById('light').textContent = s.ldr_raw;
+      document.getElementById('soil').textContent =
+        `${s.soil_percent}% (${s.soil_label})`;
+      document.getElementById('light').textContent =
+        `${s.light_percent}% (${s.light_label})`;
       document.getElementById('tank').textContent = (s.float_state == 0) ? 'LOW' : 'OK';
       document.getElementById('lamp').textContent = s.lamp_on ? 'ON' : 'OFF';
       document.getElementById('pump').textContent = s.pump_on ? 'ON' : 'OFF';
